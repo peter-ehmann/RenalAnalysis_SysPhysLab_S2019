@@ -1,0 +1,173 @@
+---
+title: 'Week 7 - Kidney Function'
+author: 'Peter J. Ehmann'
+date: '04/01/2019'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+library(dplyr)
+library(magrittr)
+library(tidyr)
+library(tidyverse)
+library(utils)
+```
+
+```{r Import_Data, echo=FALSE, warning=FALSE}
+# make sure .csv file is in the same directory as this .Rmd file
+x <- data.frame(read.csv("S2019_Renal_Data.csv"), stringsAsFactors = TRUE) %>%
+  gather(Time, Observation, Time_0:Time_90, na.rm = TRUE) %>% 
+  arrange(Group_ID, Variable_ID, Subject_ID)
+```
+
+<br>
+
+### Summarize each variable to detect potential outliers or invalid observations.
+
+<br>
+
+```{r Descriptives, echo=FALSE}
+for (i in c("Flow_Rate", "Specific_Gravity", "NaCl_conc", "NaCl_exr_rate", "Osmolality")) {
+  
+  #obtain vector of observations for each variable
+  variable <- x %>% 
+    filter(Variable == i) %>% 
+    .["Observation"]
+  
+  # print output
+  print(i)
+  print(summary(variable))
+}
+```
+
+<br>
+
+### Baseline analysis by section starting time.
+
+<br>
+
+```{r Baseline, echo=FALSE, message=FALSE}
+for (i in c("Flow_Rate", "Specific_Gravity", "NaCl_conc", "NaCl_exr_rate", "Osmolality")) {
+  
+  # assign units to each DV
+  if (i == "Flow_Rate") {units <- "(mL/min)"}
+  if (i == "Specific_Gravity") {units <- ""}
+  if (i == "NaCl_conc") {units <- "(mg/mL)"}
+  if (i == "NaCl_exr_rate") {units <- "(mg/min)"}
+  if (i == "Osmolality") {units <- "(mOsm/kg)"}
+
+  # extract mean at baseline
+  baseline_means <- x %>% 
+    filter(Variable == i) %>% 
+    filter(Time == "Time_0") %>% 
+    group_by(Time_ID, Section_Time) %>% 
+    summarise(avg = mean(Observation)) %>% 
+    arrange(Time_ID)
+  
+  # extract ci at baseline
+  baseline_ci <- x %>% 
+    filter(Variable == i) %>% 
+    filter(Time == "Time_0") %>% 
+    group_by(Time_ID, Section_Time) %>% 
+    summarise(ci = 1.96*sd(Observation)/sqrt(n())) %>% 
+    arrange(Time_ID)
+  
+  # plot bar chart with 95% confidence interval bars
+  if (i == "Specific_Gravity") {
+    print(
+      ggplot(baseline_means, mapping = aes(x = Time_ID, y = avg)) +
+        geom_point() + 
+        geom_line() + 
+        geom_errorbar(aes(ymin = avg-baseline_ci$ci, ymax = avg+baseline_ci$ci), width = 0.1) + 
+        xlab("Section Time") + 
+        ylab(paste(i, units)) + 
+        ylim(1, 1.05) + 
+        ggtitle(i) + 
+        scale_x_discrete(limit = c("8:40am", "1:40pm", "6:40pm"))
+    )
+  }
+  else {
+    print(
+      ggplot(baseline_means, mapping = aes(x = Time_ID, y = avg)) +
+        geom_bar(stat = "identity") + 
+        geom_errorbar(aes(ymin = avg-baseline_ci$ci, ymax = avg+baseline_ci$ci), width = 0.1) + 
+        xlab("Section Time") + 
+        ylab(paste(i, units)) + 
+        ggtitle(paste(i)) + 
+        scale_x_discrete(limit = c("8:40am", "1:40pm", "6:40pm"))
+    )
+  }
+}
+```
+
+<br>
+
+### Plots of each variable split by Group.
+
+<br>
+
+```{r Line_Plots, echo=FALSE, message=FALSE}
+for (i in c("Flow_Rate", "Specific_Gravity", "NaCl_conc", "NaCl_exr_rate", "Osmolality")) {
+  
+  # assign units to each DV
+  if (i == "Flow_Rate") {units <- "(mL/min)"}
+  if (i == "Specific_Gravity") {units <- ""}
+  if (i == "NaCl_conc") {units <- "(mg/mL)"}
+  if (i == "NaCl_exr_rate") {units <- "(mg/min)"}
+  if (i == "Osmolality") {units <- "(mOsm/kg)"}
+  
+  # calculate the confidence interval for each group at each time-point
+  ci <- x %>% 
+    filter(Variable == i) %>% 
+    group_by(Group_Name, Time) %>% 
+    summarise(ci = 1.96*sd(Observation)/sqrt(n()))
+  
+  # calculate the means for each group at each time-point
+  mean <- x %>% 
+    filter(Variable == i) %>% 
+    select(Group_Name, Time, Observation) %>% 
+    group_by(Group_Name, Time) %>% 
+    summarise(average = mean(Observation))
+  
+  # plot group means at each time point with 95% confidence interval bars
+  print(
+    ggplot(mean, mapping = aes(x = Time, y = average, color = Group_Name, group = Group_Name)) + 
+      geom_point() + 
+      geom_line() + 
+      geom_errorbar(aes(ymin = average-ci$ci, ymax = average+ci$ci), width = 0.1) + 
+      xlab("Time (min)") + 
+      ylab(paste(i, units)) + 
+      ggtitle(i) + 
+      scale_x_discrete(labels = c("Time_0" = "0", "Time_30" = "30", "Time_60" = "60", "Time_90" = "90"))
+  )
+  
+}
+```
+
+<br>
+
+### Comparison of Specific Gravity and Osmometer urine concentration.
+
+<br>
+
+```{r Concentration, echo=FALSE, message=FALSE, warning=FALSE}
+# spread the data to have two columns of obs. for Sp Gravity and Osmolality
+concentration <- x %>% 
+  select(Subject_ID, Variable, Time, Observation) %>% 
+  spread(Variable, Observation) %>% 
+  filter(!is.na(Specific_Gravity)) %>% 
+  filter(!is.na(Osmolality))
+
+refractometer <- concentration$Specific_Gravity
+osmometer <- concentration$Osmolality
+
+# fit simple linear regression, plot, and summarize the model
+model = lm(refractometer ~ osmometer)
+plot(osmometer, refractometer)
+abline(model)
+summary(model)
+```
+
+<br>
+
