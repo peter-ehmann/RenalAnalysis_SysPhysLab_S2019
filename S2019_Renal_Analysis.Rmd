@@ -12,7 +12,7 @@ library(tidyverse)
 
 ```{r Import_Data, echo=FALSE, warning=FALSE}
 # make sure .csv file is in the same directory as this .Rmd file
-x <- data.frame(read.csv("S2019_Renal_Data.csv"), stringsAsFactors = TRUE) %>%
+x <- data.frame(read.csv("https://raw.githubusercontent.com/peter-ehmann/RenalAnalysis_SysPhysLab_S2019/master/S2019_Renal_Data.csv"), stringsAsFactors = TRUE) %>%
   gather(Time, Observation, Time_0:Time_90, na.rm = TRUE) %>% 
   arrange(Group_ID, Variable_ID, Subject_ID)
 ```
